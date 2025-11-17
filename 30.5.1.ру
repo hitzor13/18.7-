@@ -1,0 +1,79 @@
+import pytest
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+
+@pytest.fixture()
+def driver():
+    driver = webdriver.Chrome()
+    driver.implicitly_wait(5)
+    driver.get('https://petfriends.skillfactory.ru/login')
+    yield driver
+    driver.quit()
+
+
+def test_my_pets_page(driver):
+    errors = []
+
+    driver.find_element(By.ID, 'email').send_keys('hitzor13@gmail.com')
+    driver.find_element(By.ID, 'pass').send_keys('det2xxgwddett')
+    driver.find_element(By.CSS_SELECTOR, 'button[type="submit"]').click()
+
+    WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, 'a[href="/my_pets"]'))
+    ).click()
+
+    rows = WebDriverWait(driver, 10).until(
+        EC.presence_of_all_elements_located((By.CSS_SELECTOR, "#all_my_pets tbody tr"))
+    )
+
+    # 1. Присутствуют все питомцы.
+    stats = driver.find_element(By.CSS_SELECTOR, ".\\.col-sm-4.left").text
+    number = 0
+    for line in stats.split("\n"):
+        if "Питом" in line:
+            number = int(line.split(":")[1])
+            break
+
+    if len(rows) != number:
+        errors.append(f"Строк таблицы: {len(rows)}, а должно быть: {number}")
+
+    images = driver.find_elements(By.CSS_SELECTOR, "#all_my_pets img")
+    names = driver.find_elements(By.XPATH, '//*[@id="all_my_pets"]//td[2]')
+    breeds = driver.find_elements(By.XPATH, '//*[@id="all_my_pets"]//td[3]')
+    ages = driver.find_elements(By.XPATH, '//*[@id="all_my_pets"]//td[4]')
+
+    # 2. Хотя бы у половины питомцев есть фото.
+    photos = sum(1 for img in images if img.get_attribute("src") != "")
+    if photos < number / 2:
+        errors.append(
+            f"Фото есть только у {photos} из {number} питомцев — меньше половины."
+        )
+
+    # 3. У всех питомцев есть имя, возраст и порода.
+    for i, n in enumerate(names):
+        if n.text == "":
+            errors.append(f"Питомец №{i+1}: пустое имя")
+
+    for i, b in enumerate(breeds):
+        if b.text == "":
+            errors.append(f"Питомец №{i+1}: пустая порода")
+
+    for i, a in enumerate(ages):
+        if a.text == "":
+            errors.append(f"Питомец №{i+1}: пустой возраст")
+
+    # 4. У всех питомцев разные имена.
+    names_list = [n.text for n in names]
+    if len(names_list) != len(set(names_list)):
+        errors.append("Есть повторяющиеся имена")
+
+    # 5. В списке нет повторяющихся питомцев (имя+порода+возраст)
+    pets = [names[i].text + breeds[i].text + ages[i].text for i in range(len(names))]
+    if len(pets) != len(set(pets)):
+        errors.append("Есть повторяющиеся питомцы (имя+порода+возраст)")
+
+    # ---- Список ошибок(если есть) ----
+    assert not errors, "\n".join(errors)
